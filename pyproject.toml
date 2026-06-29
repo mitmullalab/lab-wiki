@@ -1,0 +1,52 @@
+[build-system]
+build-backend = "setuptools.build_meta"
+# SEE: https://setuptools-scm.readthedocs.io/en/latest/usage/#simplified-activation-new
+requires = ["setuptools-scm[simple]>=9.2", "setuptools>=80"]
+
+[dependency-groups]
+dev = ["lab-wiki[dev]"]
+
+[project]
+classifiers = [
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Topic :: Documentation",
+    "Topic :: Scientific/Engineering",
+]
+description = "Lab wiki-style documentation."
+dynamic = ["version"]
+keywords = ["lab", "wiki"]
+license-files = ["LICENSE"]
+name = "lab-wiki"
+readme = "README.md"
+requires-python = ">=3.12"
+
+[project.optional-dependencies]
+dev = ["prek"]
+
+[tool.markdown_toc_creator]
+horizontal-rule-style = "prettier"
+proactive = false
+
+[tool.pymarkdown]
+extensions.front-matter.enabled = true  # For AI skill files Markdown
+plugins.line-length.code_block_line_length = 88  # Match ruff line-length
+plugins.line-length.enabled = true
+plugins.line-length.line_length = 120  # Match ruff max-doc-length
+plugins.line-length.stern = true
+plugins.line-length.tables = false
+plugins.no-duplicate-heading.siblings_only = true  # GitHub appends -X for duplicated headings
+plugins.no-emphasis-as-heading.enabled = false
+plugins.no-inline-html.enabled = false
+
+[tool.setuptools]
+py-modules = []  # No Python source
+
+[tool.tomlsort]
+all = true
+in_place = true
+spaces_before_inline_comment = 2  # Match Python PEP 8
+spaces_indent_inline_array = 4  # Match Python PEP 8
+trailing_comma_inline_array = true
