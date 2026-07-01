@@ -26,6 +26,11 @@ requires-python = ">=3.12"
 [project.optional-dependencies]
 dev = ["prek"]
 
+[tool.codespell]
+check-filenames = true
+check-hidden = true
+ignore-words-list = "ser"
+
 [tool.markdown_toc_creator]
 horizontal-rule-style = "prettier"
 proactive = false

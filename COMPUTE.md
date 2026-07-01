@@ -10,6 +10,7 @@
   - [Login and Compute Nodes](#login-and-compute-nodes)
   - [SSH](#ssh)
     - [Recovering a stale master](#recovering-a-stale-master)
+    - [Avoiding repeated MFA on Windows](#avoiding-repeated-mfa-on-windows)
     - [SSH Into Compute Nodes](#ssh-into-compute-nodes)
   - [Web Portal](#web-portal)
   - [Slurm](#slurm)
@@ -137,6 +138,30 @@ Master running (pid=12345)
 Control socket connect(/path/to/.ssh/...): No such file or directory
 # Just run `ssh orcd`
 ```
+
+#### Avoiding repeated MFA on Windows
+
+The `ControlMaster` setup above is OpenSSH connection multiplexing (aka connection sharing),
+the industry-standard name for what [ORCD's docs][ssh-login-2fa] call a "control channel."
+Native Windows OpenSSH doesn't implement connection sharing:
+the [Win32-OpenSSH project][win32-scope] lists "Client ControlMaster"
+among features that are "scoped out and will not work on Windows yet."
+Windows users can still get connection sharing by running SSH from WSL,
+where `ControlMaster` works exactly [as above](#ssh).
+
+Otherwise, Native-Windows users can log into the [OnDemand web portal](#web-portal) first.
+Per [ORCD's docs][ssh-login-2fa]:
+
+> Logging into ORCD OnDemand will allow you to log in with an ssh key for a short period of time,
+> without the need to enter your MIT Kerberos password and respond to a Duo push.
+
+ORCD's docs don't state the duration; an ORCD staff member mentioned roughly a day.
+This shortcut still requires your public SSH key to be [installed on the cluster](#ssh);
+logging into OnDemand waives the MIT Kerberos password and Duo push for a short window afterward,
+but not the requirement for an installed SSH key.
+
+[ssh-login-2fa]: https://orcd-docs.mit.edu/accessing-orcd/ssh-login/
+[win32-scope]: https://github.com/PowerShell/Win32-OpenSSH/wiki/Project-Scope
 
 #### SSH Into Compute Nodes
 
