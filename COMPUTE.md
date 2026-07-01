@@ -203,6 +203,8 @@ Hence the `ood` portion of <https://orcd-ood.mit.edu>.
 
 ### Slurm
 
+For Slurm basics (job lifecycle, `sbatch`/`srun`/`squeue`), see the
+[ORCD job-scheduler overview][slurm-overview].
 To test Slurm connection, run `sinfo --summarize`.
 Then to try out a job:
 
@@ -213,6 +215,8 @@ srun --time=00:01:00 --ntasks=1 --cpus-per-task=1 --mem=1G \
 
 Eventually once allocated resources, you'll get: "Hello world from node1234."
 
+[slurm-overview]: https://orcd-docs.mit.edu/running-jobs/overview/
+
 #### Interactive allocations
 
 From the login node (`ssh orcd`), request resources with `salloc ... --no-shell &`,
@@ -222,18 +226,14 @@ and connect to it via [`orcd-cpu`/`gpu`](#ssh-into-compute-nodes).
 8 CPU cores for 6 hours on `mit_normal`:
 
 ```bash
-salloc -p mit_normal \
-  --account=mit_amf_advanced_cpu --qos=mit_amf_advanced_cpu \
-  -c 8 --mem=32G --time=6:00:00 --no-shell &
+salloc -p mit_normal -c 8 --mem=32G --time=6:00:00 --no-shell &
 squeue --me   # read the node from the NODELIST column, e.g. node1234
 ```
 
 GPU equivalent, 2 L40S GPUs for 6 hours on `mit_normal_gpu`:
 
 ```bash
-salloc -p mit_normal_gpu \
-  --account=mit_amf_advanced_gpu --qos=mit_amf_advanced_gpu \
-  -G l40s:2 -c 16 --mem=48G --time=6:00:00 --no-shell &
+salloc -p mit_normal_gpu -G l40s:2 -c 16 --mem=48G --time=6:00:00 --no-shell &
 ```
 
 Notes:
@@ -250,22 +250,47 @@ Notes:
 
 #### Accounts and QoS tiers
 
+The default tier is free and needs no extra flags:
+omit `--account` / `--qos` and Slurm runs your job under account `mit_general`, QoS `normal`.
+This default covers both the CPU (`mit_normal`) and GPU (`mit_normal_gpu`) partitions.
+
 Unlike the resource-shape flags (`-p`, `-c`, `-G`, `--mem`)
 covered in the general [ORCD requesting-resources docs][requesting-resources],
-`--account` / `--qos` select an Advanced Compute Access tier.
+`--account` / `--qos` opt into an Advanced Compute Access tier.
 `mit_amf_advanced_cpu` / `mit_amf_advanced_gpu` are ORCD's MIT-wide Advanced accounts.
 Advanced is a paid per-account upgrade that raises priority and per-session ceilings
 (see [ORCD's Compute Services][compute-services];
 and pricing on ORCD's [Storage and Compute Services][storage-compute-services]).
-Without the upgrade you run on the default `mit_general` / `normal`.
-
-Check your live ceilings with:
+Check what you can actually use with:
 
 ```bash
-sacctmgr show qos mit_amf_advanced_cpu format=Name,MaxWall,MaxTRES,MaxTRESPU
+sacctmgr show assoc where user=$USER format=Account,QOS,Partition  # what you can use
 ```
 
+Attempts to submit jobs with an account you aren't subscribed to
+(e.g. `salloc --account mit_amf_advanced_gpu` without an Advanced tier)
+will be rejected with:
+
+> Invalid account or account/partition combination specified
+
 ### GPUs
+
+GPUs are available on the default (free) tier. That tier is the default Slurm association:
+the account `mit_general` together with the Quality of Service (QoS) `normal`.
+`salloc` uses this account/QoS pair when neither `--account` nor `--qos` is specified.
+The account is what marks the tier as free versus paid;
+the Advanced upgrade swaps in a different account (`mit_amf_advanced_*`) and its matching QoS.
+
+The tiers differ in the per-user ceiling on `mit_normal_gpu`
+and in scheduling priority (Advanced is higher).
+Advance Rentals reserve specific hardware for guaranteed access.
+
+| Per-user ceiling on `mit_normal_gpu`           | Free tier        | Advanced tier          |
+| ---------------------------------------------- | ---------------- | ---------------------- |
+| GPUs                                           | 2                | 4                      |
+| CPUs                                           | 32               | 64                     |
+| RAM                                            | 515 GiB          | 1 TiB                  |
+| Derived from `sacctmgr show qos X` (6/30/2026) | `mit_normal_gpu` | `mit_amf_advanced_gpu` |
 
 `mit_normal_gpu` is heterogeneous; without a model specified Slurm hands you whatever's free,
 which per [ORCD's requesting-resources docs][requesting-resources] defaults to an L40S.
@@ -277,7 +302,15 @@ Pin a model with `-G <type>:N` (e.g. `-G l40s:2`).
 | H100 | 4         | 79 GB   | 16              |
 | H200 | 8         | 140 GB  | 15              |
 
-- GPU memory and per-node specs are from [ORCD's Available Resources][available-resources] page.
+- GPUs/node is each node's physical GPU count, not a required request size: nodes are shared
+  ([Slurm's `select/cons_tres` plugin][cons_tres] plus Linux cgroups place multiple jobs on one node,
+  each confined to its own disjoint slice of GPUs, CPUs, and RAM), so you can take a subset.
+  - The free-tier 2-GPU ceiling still gets you L40S, H100, or H200 (up to two of them);
+    it just can't claim a full 4-GPU L40S/H100 node or 8-GPU H200 node.
+  - Every GPU node holds a single model, so a 2-GPU job on one node gets
+    two of the same type (e.g. two L40S), never a mix (e.g. one L40S + one H100).
+- GPU memory and per-node specs are from [ORCD's Available Resources][available-resources] page,
+  as of 6/29/2026.
 - CPUs/GPU budget is each node's CPU cores divided by its GPUs.
 
 To discover what's actually in the pool:
@@ -296,6 +329,7 @@ see [ORCD's Compute Services][compute-services].
 [requesting-resources]: https://orcd-docs.mit.edu/running-jobs/requesting-resources/
 [available-resources]: https://orcd-docs.mit.edu/running-jobs/available-resources/
 [compute-services]: https://orcd-docs.mit.edu/services/compute-services/
+[cons_tres]: https://slurm.schedmd.com/cons_tres.html
 [storage-compute-services]: https://orcd.mit.edu/resources/storage-and-compute-services
 
 ### Filesystems
@@ -315,6 +349,9 @@ Per [ORCD's filesystems docs][filesystems], they differ in speed, size, and whet
 | `/orcd/compute/sendhil/001` | group  | No                          | Datasets, checkpoints, outputs (group-shared) |
 | `/orcd/pool/$USER`          | 1 TB   | No                          | Staging for large datasets not in active use  |
 | `/orcd/scratch/$USER`       | 1 TB   | No (purged after 6 mo idle) | Data a running job is actively using (fast)   |
+
+Quotas and backup information are from [ORCD's filesystems docs][filesystems] as of 6/29/2026,
+and can be verified using `quota -s`.
 
 #### Group storage
 
