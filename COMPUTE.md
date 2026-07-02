@@ -10,16 +10,20 @@
   - [Login and Compute Nodes](#login-and-compute-nodes)
   - [SSH](#ssh)
     - [Recovering a stale master](#recovering-a-stale-master)
+    - [`rsync` over SSH](#rsync-over-ssh)
+    - [Keeping the `ControlMaster` alive](#keeping-the-controlmaster-alive)
     - [Avoiding repeated MFA on Windows](#avoiding-repeated-mfa-on-windows)
     - [SSH Into Compute Nodes](#ssh-into-compute-nodes)
   - [Web Portal](#web-portal)
   - [Slurm](#slurm)
     - [Interactive allocations](#interactive-allocations)
     - [Accounts and QoS tiers](#accounts-and-qos-tiers)
+    - [`uv`-managed environments](#uv--managed-environments)
   - [GPUs](#gpus)
   - [Filesystems](#filesystems)
     - [Group storage](#group-storage)
   - [Python (Miniforge)](#python-miniforge)
+  - [Ray](#ray)
 - [Economics](#economics)
 - [VPN](#vpn)
 
@@ -98,11 +102,15 @@ Host orcd
     HostName orcd-login.mit.edu
     ControlMaster auto
     ControlPath ~/.ssh/%r@%h:%p
-    ControlPersist 30m
+    ControlPersist 8h
     User user
 ```
 
 If you want, you can add `ForwardAgent yes` to also forward your GitHub SSH key.
+
+ORCD's docs show `ControlPersist 300s`;
+we bumped to `8h` so the master survives long gaps between connections while long-ish scripts run
+(see [Keeping the `ControlMaster` alive](#keeping-the-controlmaster-alive)).
 
 Since `ControlPath`'s name (the local file where the `ControlMaster` socket will live)
 is derived from the general `orcd-login.mit.edu`, not a specific node you reach,
@@ -138,6 +146,50 @@ Master running (pid=12345)
 Control socket connect(/path/to/.ssh/...): No such file or directory
 # Just run `ssh orcd`
 ```
+
+#### `rsync` over SSH
+
+An `rsync` file transfer running over SSH will be [multiplexed][openssh-multiplexing] through the `ControlMaster`.
+If the master's connection has gone stale, the `rsync` invocation will hang indefinitely too.
+To avoid this pitfall, pass `--timeout=SECONDS` to `rsync` (e.g. `rsync --timeout=300`)
+so a stalled transfer will eventually error out.
+Note that `--timeout` is an I/O-inactivity timeout (time since data last moved),
+not a cap on total transfer time, so 300-sec is a useful and conservative value.
+
+Also consider passing `--info=stats1` to print just one end-of-transfer summary
+to better align with script logs, instead of one line per transferred file.
+Here's a sample output for a first-time transfer (`rsync` performed the full sync):
+
+```text
+sent 428,942 bytes  received 73 bytes  858,030.00 bytes/sec
+total size is 441,453  speedup is 1.03
+```
+
+#### Keeping the `ControlMaster` alive
+
+`ControlPersist` is a rolling idle-timeout (that on expiry closes the master `ssh` process),
+not a cap on the `ControlMaster`'s total lifetime.
+This behavior is documented in [this SSH multiplexing guide][ssh-multiplexing-lowe]:
+
+> Subsequent SSH sessions made while the master connection is open
+> will leverage the master connection and will reset the idle timer.
+
+Suppose a coding agent running on your machine is performing periodic status checks on a job
+(e.g. `ssh orcd 'sacct -j JOBID'` to query the job's state).
+Any check cadence shorter than the `ControlPersist` value doubles as a keepalive;
+the master `ssh` process never expires while the laptop stays awake.
+
+What matters is client connections, not traffic.
+The `ControlPersist` countdown runs only while the session count is zero:
+
+- Opening a session (count → ≥1): stops the countdown entirely.
+  No timer is running while any session is open,
+  and no new countdown starts until the session closes.
+- Closing the last session (count → 0): starts a fresh, full-length countdown.
+  "Idle (with no client connections)" only begins once the last connection has closed.
+
+For example, if idle for 7.5 hours, then a job status check's `ssh orcd` sessions took place
+for 6-seconds (0.1-hours), then a new countdown starts and the master `ssh` process lives until hour 15.6.
 
 #### Avoiding repeated MFA on Windows
 
@@ -219,6 +271,8 @@ Host orcd-cpu
     User user
 ```
 
+[openssh-multiplexing]: https://en.wikibooks.org/wiki/OpenSSH/Cookbook/Multiplexing
+[ssh-multiplexing-lowe]: https://blog.scottlowe.org/2015/12/11/using-ssh-multiplexing/
 [ssh-controlchannel]: https://orcd-docs.mit.edu/accessing-orcd/control-channels/#use-of-ssh-controlchannel
 
 ### Web Portal
@@ -297,6 +351,20 @@ Attempts to submit jobs with an account you aren't subscribed to
 will be rejected with:
 
 > Invalid account or account/partition combination specified
+
+#### `uv`-managed environments
+
+Projects managed with [uv](https://docs.astral.sh/uv/) need care inside Slurm jobs.
+Concurrent jobs running a plain `uv run` can concurrently rebuild a project's editable install,
+racing for the uv cache lock (in the NFS location `~/.cache/uv`, shared across all nodes).
+The latter job(s) can hit a uv lock timeout:
+
+> Failed to acquire lock ... is another uv process running?
+> You can set `UV_LOCK_TIMEOUT` to increase the timeout.
+
+Run `uv sync` once from a login node when the code changes;
+jobs otherwise should stick to `uv run --no-sync`
+or activate the virtual environment directly and skip `uv run`.
 
 ### GPUs
 
@@ -418,6 +486,29 @@ inside the script itself: a batch job starts a fresh shell on the compute node
 and does not inherit the module or virtualenv you loaded in an interactive login-node shell.
 
 [orcd-python]: https://orcd-docs.mit.edu/software/python/
+
+### Ray
+
+[Ray's own default][ray-tmpdir-docs] session directory is `/tmp/ray`.
+Note that:
+
+1. `/tmp` is per-node (but not per user):
+   each compute node has its own local `/tmp`.
+2. Within each node the filesystem is shared across jobs, regardless of the job owner
+   (Slurm shares nodes between users; see [GPUs](#gpus)).
+
+So `/tmp/ray` is a fixed path that multiple users' jobs on the same node contend for,
+owned by whichever user's job created it first.
+To avoid cross-user collisions (in the form of a permission error),
+give Ray a per-user temp directory in the job script:
+
+```bash
+export RAY_TMPDIR="/tmp/$USER-ray"
+```
+
+Then Ray sessions land under `/tmp/$USER-ray/ray/session_...`.
+
+[ray-tmpdir-docs]: https://docs.ray.io/en/latest/ray-core/configure.html#logging-and-debugging
 
 ## Economics
 
