@@ -100,11 +100,15 @@ Host orcd
     HostName orcd-login.mit.edu
     ControlMaster auto
     ControlPath ~/.ssh/%r@%h:%p
-    ControlPersist 30m
+    ControlPersist 8h
     User user
 ```
 
 If you want, you can add `ForwardAgent yes` to also forward your GitHub SSH key.
+
+ORCD's docs show `ControlPersist 300s`;
+we bumped to `8h` so the master survives long gaps between connections while long-ish scripts run
+(see [Keeping the `ControlMaster` alive](#keeping-the-controlmaster-alive)).
 
 Since `ControlPath`'s name (the local file where the `ControlMaster` socket will live)
 is derived from the general `orcd-login.mit.edu`, not a specific node you reach,
