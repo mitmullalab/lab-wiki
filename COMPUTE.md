@@ -10,6 +10,8 @@
   - [Login and Compute Nodes](#login-and-compute-nodes)
   - [SSH](#ssh)
     - [Recovering a stale master](#recovering-a-stale-master)
+    - [`rsync` over SSH](#rsync-over-ssh)
+    - [Keeping the `ControlMaster` alive](#keeping-the-controlmaster-alive)
     - [Avoiding repeated MFA on Windows](#avoiding-repeated-mfa-on-windows)
     - [SSH Into Compute Nodes](#ssh-into-compute-nodes)
   - [Web Portal](#web-portal)
@@ -139,6 +141,50 @@ Control socket connect(/path/to/.ssh/...): No such file or directory
 # Just run `ssh orcd`
 ```
 
+#### `rsync` over SSH
+
+An `rsync` file transfer running over SSH will be [multiplexed][openssh-multiplexing] through the `ControlMaster`.
+If the master's connection has gone stale, the `rsync` invocation will hang indefinitely too.
+To avoid this pitfall, pass `--timeout=SECONDS` to `rsync` (e.g. `rsync --timeout=300`)
+so a stalled transfer will eventually error out.
+Note that `--timeout` is an I/O-inactivity timeout (time since data last moved),
+not a cap on total transfer time, so 300-sec is a useful and conservative value.
+
+Also consider passing `--info=stats1` to print just one end-of-transfer summary
+to better align with script logs, instead of one line per transferred file.
+Here's a sample output for a first-time transfer (`rsync` performed the full sync):
+
+```text
+sent 428,942 bytes  received 73 bytes  858,030.00 bytes/sec
+total size is 441,453  speedup is 1.03
+```
+
+#### Keeping the `ControlMaster` alive
+
+`ControlPersist` is a rolling idle-timeout (that on expiry closes the master `ssh` process),
+not a cap on the `ControlMaster`'s total lifetime.
+This behavior is documented in [this SSH multiplexing guide][ssh-multiplexing-lowe]:
+
+> Subsequent SSH sessions made while the master connection is open
+> will leverage the master connection and will reset the idle timer.
+
+Suppose a coding agent running on your machine is performing periodic status checks on a job
+(e.g. `ssh orcd 'sacct -j JOBID'` to query the job's state).
+Any check cadence shorter than the `ControlPersist` value doubles as a keepalive;
+the master `ssh` process never expires while the laptop stays awake.
+
+What matters is client connections, not traffic.
+The `ControlPersist` countdown runs only while the session count is zero:
+
+- Opening a session (count → ≥1): stops the countdown entirely.
+  No timer is running while any session is open,
+  and no new countdown starts until the session closes.
+- Closing the last session (count → 0): starts a fresh, full-length countdown.
+  "Idle (with no client connections)" only begins once the last connection has closed.
+
+For example, if idle for 7.5 hours, then a job status check's `ssh orcd` sessions took place
+for 6-seconds (0.1-hours), then a new countdown starts and the master `ssh` process lives until hour 15.6.
+
 #### Avoiding repeated MFA on Windows
 
 The `ControlMaster` setup above is OpenSSH connection multiplexing (aka connection sharing),
@@ -219,6 +265,8 @@ Host orcd-cpu
     User user
 ```
 
+[openssh-multiplexing]: https://en.wikibooks.org/wiki/OpenSSH/Cookbook/Multiplexing
+[ssh-multiplexing-lowe]: https://blog.scottlowe.org/2015/12/11/using-ssh-multiplexing/
 [ssh-controlchannel]: https://orcd-docs.mit.edu/accessing-orcd/control-channels/#use-of-ssh-controlchannel
 
 ### Web Portal
