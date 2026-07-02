@@ -18,10 +18,12 @@
   - [Slurm](#slurm)
     - [Interactive allocations](#interactive-allocations)
     - [Accounts and QoS tiers](#accounts-and-qos-tiers)
+    - [`uv`-managed environments](#uv--managed-environments)
   - [GPUs](#gpus)
   - [Filesystems](#filesystems)
     - [Group storage](#group-storage)
   - [Python (Miniforge)](#python-miniforge)
+  - [Ray](#ray)
 - [Economics](#economics)
 - [VPN](#vpn)
 
@@ -350,6 +352,20 @@ will be rejected with:
 
 > Invalid account or account/partition combination specified
 
+#### `uv`-managed environments
+
+Projects managed with [uv](https://docs.astral.sh/uv/) need care inside Slurm jobs.
+Concurrent jobs running a plain `uv run` can concurrently rebuild a project's editable install,
+racing for the uv cache lock (in the NFS location `~/.cache/uv`, shared across all nodes).
+The latter job(s) can hit a uv lock timeout:
+
+> Failed to acquire lock ... is another uv process running?
+> You can set `UV_LOCK_TIMEOUT` to increase the timeout.
+
+Run `uv sync` once from a login node when the code changes;
+jobs otherwise should stick to `uv run --no-sync`
+or activate the virtual environment directly and skip `uv run`.
+
 ### GPUs
 
 GPUs are available on the default (free) tier. That tier is the default Slurm association:
@@ -470,6 +486,29 @@ inside the script itself: a batch job starts a fresh shell on the compute node
 and does not inherit the module or virtualenv you loaded in an interactive login-node shell.
 
 [orcd-python]: https://orcd-docs.mit.edu/software/python/
+
+### Ray
+
+[Ray's own default][ray-tmpdir-docs] session directory is `/tmp/ray`.
+Note that:
+
+1. `/tmp` is per-node (but not per user):
+   each compute node has its own local `/tmp`.
+2. Within each node the filesystem is shared across jobs, regardless of the job owner
+   (Slurm shares nodes between users; see [GPUs](#gpus)).
+
+So `/tmp/ray` is a fixed path that multiple users' jobs on the same node contend for,
+owned by whichever user's job created it first.
+To avoid cross-user collisions (in the form of a permission error),
+give Ray a per-user temp directory in the job script:
+
+```bash
+export RAY_TMPDIR="/tmp/$USER-ray"
+```
+
+Then Ray sessions land under `/tmp/$USER-ray/ray/session_...`.
+
+[ray-tmpdir-docs]: https://docs.ray.io/en/latest/ray-core/configure.html#logging-and-debugging
 
 ## Economics
 
