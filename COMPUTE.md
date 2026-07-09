@@ -274,10 +274,14 @@ Host orcd-cpu
 
 ##### Port-forwarding to a compute node
 
-Since the compute node's loopback interface is not public, a web server
-(e.g. Jupyter, a monitoring dashboard)
-running on a compute node is unreachable from a login node.
-Thus, an SSH tunnel must be used to connect to the web server from your machine:
+Since a compute node's loopback interface is not public
+(only processes on that same node can reach it),
+a web server (e.g. Jupyter, a monitoring dashboard)
+bound to `localhost` on a compute node cannot be reached from a login node or your machine.
+Thus, an SSH tunnel must be used to connect to the web server from your machine.
+Note if you have multiple running jobs in the partition,
+first make sure `orcd-cpu` resolves to the node running the web server
+(see the `head -1` comment in `orcd-cpu`'s `ProxyCommand` above):
 
 ```bash
 ssh -L 8888:localhost:8888 orcd-cpu   # then open http://localhost:8888
