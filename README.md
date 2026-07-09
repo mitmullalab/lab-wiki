@@ -7,7 +7,7 @@ and be useful for human and AI consumption.
 
 Documents:
 
-- [Lab Wiki (external Google Doc)][lab-wiki-doc]: general-purpose wiki organized into tabs.
+- Lab Wiki (_**undergoing maintenance**_): general-purpose wiki organized into tabs.
   This document covers both technical and non-technical lab topics,
   including onboarding, expense tracking, and lab administration.
 - [`COMPUTE.md`](COMPUTE.md): documents various sources of compute,
@@ -15,4 +15,3 @@ Documents:
 
 [homepage]: https://thebikeshop.mit.edu/
 [sendhil]: https://sendhil.org/
-[lab-wiki-doc]: https://docs.google.com/document/d/1V0wTk4UOf_oKorRwD4emGBOqp6vB-y92VDqD9I33aZQ/
