@@ -14,6 +14,7 @@
     - [Keeping the `ControlMaster` alive](#keeping-the-controlmaster-alive)
     - [Avoiding repeated MFA on Windows](#avoiding-repeated-mfa-on-windows)
     - [SSH Into Compute Nodes](#ssh-into-compute-nodes)
+      - [Port-forwarding to a compute node](#port-forwarding-to-a-compute-node)
   - [Web Portal](#web-portal)
   - [Slurm](#slurm)
     - [Interactive allocations](#interactive-allocations)
@@ -270,6 +271,29 @@ Host orcd-cpu
     # No ControlMaster here; reuses orcd's master socket
     User user
 ```
+
+##### Port-forwarding to a compute node
+
+Since a compute node's loopback interface is not public
+(only processes on that same node can reach it),
+a web server (e.g. Jupyter, a monitoring dashboard)
+bound to `localhost` on a compute node cannot be reached from a login node or your machine.
+Thus, an SSH tunnel must be used to connect to the web server from your machine.
+Note if you have multiple running jobs in the partition,
+first make sure `orcd-cpu` resolves to the node running the web server
+(see the `head -1` comment in `orcd-cpu`'s `ProxyCommand` above):
+
+```bash
+ssh -L 8888:localhost:8888 orcd-cpu   # then open http://localhost:8888
+```
+
+Slurm PAM (see [Login and Compute Nodes](#login-and-compute-nodes)) admits the tunnel
+only while your job runs on that node, and it drops when the job ends.
+Afterwards, tunneling attempts get rejected post-authentication with exit code 255:
+
+> Access denied: user user (uid=123456) has no active jobs on this node.
+> Access denied by pam_slurm_adopt: you have no active jobs on this node
+> Connection closed by UNKNOWN port 65535
 
 [openssh-multiplexing]: https://en.wikibooks.org/wiki/OpenSSH/Cookbook/Multiplexing
 [ssh-multiplexing-lowe]: https://blog.scottlowe.org/2015/12/11/using-ssh-multiplexing/
