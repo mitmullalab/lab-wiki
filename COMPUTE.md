@@ -364,10 +364,17 @@ covered in the general [ORCD requesting-resources docs][requesting-resources],
 Advanced is a paid per-account upgrade that raises priority and per-session ceilings
 (see [ORCD's Compute Services][compute-services];
 and pricing on ORCD's [Storage and Compute Services][storage-compute-services]).
-Check what you can actually use with:
+Always pass `--qos` together with `--account`,
+because the account alone does not switch the QoS.
+A job submitted with only `--account=mit_amf_advanced_gpu` still runs under QoS `normal`
+(observed on 7/9/2026 after hitting unexpected job queueing,
+then seeing the job start immediately after resubmitting with both flags specified).
+To check what you can actually use and/or what a job actually got:
 
 ```bash
 sacctmgr show assoc where user=$USER format=Account,QOS,Partition  # what you can use
+squeue -j JOBID -h -o "%T reason=%r"    # job state and its pending reason
+sacct -j JOBID -X -o JobID,Account,QOS  # the account/QoS pair a job really has
 ```
 
 Attempts to submit jobs with an account you aren't subscribed to
