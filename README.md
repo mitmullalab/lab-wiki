@@ -1,6 +1,6 @@
 # lab-wiki
 
-Home for technical documentation used by the [Bike Shop][homepage]'s
+Home for technical documentation used by the [Bike Shop][homepage]
 (led at MIT by [Sendhil Mullainathan][sendhil]).
 Documents here should be high-signal, containing verified and cited information,
 and be useful for human and AI consumption.
